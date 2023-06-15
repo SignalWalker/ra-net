@@ -1,0 +1,26 @@
+[package]
+name = "ra-net"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossbeam = "^0.8"
+bytemuck = { version = "^1.13", features = ["extern_crate_std", "bytemuck_derive"] }
+xxhash-rust = { version = "0.8.6", features = ["const_xxh32"] }
+capnp = "^0.17"
+raiithread = { git = "https://github.com/SignalWalker/raiithread" }
+socket2 = { version = "^0.5" }
+mio = "^0.8"
+thiserror = "^1.0"
+bitflags = "^2.3"
+arraydeque = "^0.5"
+lazy_static = "^1.4"
+dashmap = "^5.4"
+parking_lot = "^0.12"
+tracing = "^0.1"
+
+[build-dependencies]
+built = "^0.6"
+capnpc = "^0.17"
