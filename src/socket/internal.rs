@@ -14,7 +14,7 @@ use socket2::{Domain, Protocol, SockAddr, Socket};
 
 use crate::{
     MulticastAddr, MulticastAddrV4, MulticastAddrV6, PacketFlags, PacketHeader, RdpError, RdpEvent,
-    RdpPacket, RdpStream, RdpStreamInternal, SendStatus, MAX_DGRAM_BYTES,
+    RdpPacket, RdpStream, RdpStreamInternal, MAX_DGRAM_BYTES,
 };
 
 lazy_static::lazy_static! {

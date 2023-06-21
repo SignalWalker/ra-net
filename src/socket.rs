@@ -18,6 +18,11 @@ pub use stream::*;
 mod multicast;
 pub use multicast::*;
 
+#[cfg(feature = "ggrs")]
+mod ggrs;
+#[cfg(feature = "ggrs")]
+pub use self::ggrs::*;
+
 #[derive(Debug, thiserror::Error)]
 pub enum RdpError {
     #[error(transparent)]
