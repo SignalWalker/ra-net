@@ -112,8 +112,12 @@ impl Eq for RdpSocket {}
 
 impl RdpSocket {
     #[inline]
-    pub fn bind(addrs: impl ToSocketAddrs) -> Result<(SocketAddr, Self), RdpError> {
-        RdpSocketInternal::find_or_bind(addrs).map(|(addr, internal)| (addr, Self { internal }))
+    pub fn bind(
+        pool: impl futures::task::SpawnExt + Copy + Send + 'static,
+        addrs: impl ToSocketAddrs,
+    ) -> Result<(SocketAddr, Self), RdpError> {
+        RdpSocketInternal::find_or_bind(pool, addrs)
+            .map(|(addr, internal)| (addr, Self { internal }))
     }
 
     #[inline]
@@ -162,8 +166,12 @@ impl RdpSocket {
     }
 
     #[inline]
-    pub fn connect_to(&self, addr: SocketAddr) -> Result<RdpStream, RdpError> {
-        self.internal.connect_to(addr)
+    pub fn connect_to(
+        &self,
+        pool: impl futures::task::SpawnExt,
+        addr: SocketAddr,
+    ) -> Result<RdpStream, RdpError> {
+        self.internal.connect_to(pool, addr)
     }
 
     #[inline]

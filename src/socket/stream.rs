@@ -46,7 +46,7 @@ impl RdpStream {
 
     pub async fn send_reliable(self, data: &[u8]) -> Result<(), RdpError> {
         loop {
-            match self.send(data)?.wait() {
+            match self.send(data)?.await {
                 SendState::Lost => continue,
                 SendState::Acknowledged => return Ok(()),
                 SendState::Pending => unreachable!(),

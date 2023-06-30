@@ -8,8 +8,8 @@ use std::{
 
 use crossbeam::channel::{self, Receiver, Sender};
 use dashmap::{DashMap, DashSet};
+use futures::future::RemoteHandle;
 use parking_lot::{Condvar, Mutex};
-use raiithread::RaiiThread;
 use socket2::{Domain, Protocol, SockAddr, Socket};
 
 use crate::{
@@ -32,17 +32,20 @@ pub(crate) struct RdpSocketInternal {
     streams: Arc<DashMap<SocketAddr, (Sender<Box<RdpPacket>>, Weak<RdpStreamInternal>)>>,
     event_flag: Arc<(Mutex<RdpEvent>, Condvar)>,
     stop_flag: Arc<AtomicBool>,
-    recv_thread: RaiiThread<'static, Result<(), RdpError>>,
+    recv_thread: Option<RemoteHandle<Result<(), RdpError>>>,
 }
 
 impl Drop for RdpSocketInternal {
     fn drop(&mut self) {
-        let _ = self.stop().unwrap();
+        let _ = futures::executor::block_on(self.stop());
     }
 }
 
 impl RdpSocketInternal {
-    pub fn find_or_bind(addrs: impl ToSocketAddrs) -> Result<(SocketAddr, Arc<Self>), RdpError> {
+    pub fn find_or_bind(
+        pool: impl futures::task::SpawnExt + Copy + Send + 'static,
+        addrs: impl ToSocketAddrs,
+    ) -> Result<(SocketAddr, Arc<Self>), RdpError> {
         let addrs = addrs.to_socket_addrs()?;
         let mut res = None;
 
@@ -68,10 +71,9 @@ impl RdpSocketInternal {
                     }
                 };
 
-                match sock
-                    .bind(&addr)
-                    .and_then(|_| Self::new(sock.local_addr()?, sock, Duration::from_millis(200)))
-                {
+                match sock.bind(&addr).and_then(|_| {
+                    Self::new(pool, sock.local_addr()?, sock, Duration::from_millis(200))
+                }) {
                     Ok(sock) => {
                         res = Some(Ok((sock.addr.clone(), sock)));
                         break;
@@ -96,7 +98,12 @@ impl RdpSocketInternal {
     }
 
     /// Bind the socket to an address and begin listening for packets.
-    fn new(addr: SockAddr, udp: Socket, timeout: Duration) -> IoResult<Arc<Self>> {
+    fn new(
+        pool: impl futures::task::SpawnExt + Copy + Send + 'static,
+        addr: SockAddr,
+        udp: Socket,
+        timeout: Duration,
+    ) -> IoResult<Arc<Self>> {
         udp.set_nonblocking(false)?;
         udp.set_write_timeout(Some(timeout))?;
         udp.set_read_timeout(Some(timeout))?;
@@ -132,8 +139,9 @@ impl RdpSocketInternal {
             event_flag,
             stop_flag,
             streams,
-            recv_thread: RaiiThread::spawn(move || -> Result<(), RdpError> {
-                Self::recv_thread(
+            recv_thread: Some(
+                pool.spawn_with_handle(Self::recv_thread(
+                    pool,
                     weak_recv,
                     recv_sock,
                     recv_stop_flag,
@@ -141,8 +149,9 @@ impl RdpSocketInternal {
                     connection_sender,
                     packet_sender,
                     recv_streams,
-                )
-            })?,
+                ))
+                .unwrap(),
+            ),
         });
 
         weak_send
@@ -226,7 +235,11 @@ impl RdpSocketInternal {
         )
     }
 
-    pub fn connect_to(self: &Arc<Self>, addr: SocketAddr) -> Result<RdpStream, RdpError> {
+    pub fn connect_to(
+        self: &Arc<Self>,
+        pool: impl futures::task::SpawnExt,
+        addr: SocketAddr,
+    ) -> Result<RdpStream, RdpError> {
         match self.streams.get_mut(&addr) {
             Some(mut e) => {
                 let (sender, weak) = e.value_mut();
@@ -234,7 +247,8 @@ impl RdpSocketInternal {
                     Some(i) => i,
                     None => {
                         let internal;
-                        (*sender, internal) = RdpStreamInternal::new(addr.into(), self.clone())?;
+                        (*sender, internal) =
+                            RdpStreamInternal::new(pool, addr.into(), self.clone())?;
                         *weak = Arc::downgrade(&internal);
                         internal
                     }
@@ -242,7 +256,7 @@ impl RdpSocketInternal {
                 Ok(internal.to_external())
             }
             None => {
-                let (sender, internal) = RdpStreamInternal::new(addr.into(), self.clone())?;
+                let (sender, internal) = RdpStreamInternal::new(pool, addr.into(), self.clone())?;
                 let weak = Arc::downgrade(&internal);
 
                 self.streams.insert(addr, (sender, weak));
@@ -252,10 +266,11 @@ impl RdpSocketInternal {
         }
     }
 
-    fn stop(&mut self) -> std::thread::Result<Result<(), RdpError>> {
+    #[must_use]
+    fn stop(&mut self) -> impl std::future::Future<Output = Result<(), RdpError>> {
         self.stop_flag
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.recv_thread.join()
+        self.recv_thread.take().unwrap()
     }
 
     // pub fn try_into_udp(mut self) -> Result<UdpSocket, RdpError> {
@@ -312,7 +327,8 @@ impl RdpSocketInternal {
         self.mcasts.contains(addr)
     }
 
-    fn recv_thread(
+    async fn recv_thread(
+        pool: impl futures::task::SpawnExt + Copy,
         weak_recv: Receiver<Weak<RdpSocketInternal>>,
         sock: Socket,
         stop_flag: Arc<AtomicBool>,
@@ -368,6 +384,7 @@ impl RdpSocketInternal {
                     tracing::debug!(local = %local_addr, remote = ?addr, "initializing new RdpStream");
 
                     let (sender, internal) = RdpStreamInternal::new(
+                        pool,
                         addr.into(),
                         rdp_ref
                             .upgrade()

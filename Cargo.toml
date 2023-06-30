@@ -10,7 +10,6 @@ crossbeam = "^0.8"
 bytemuck = { version = "^1.13", features = ["extern_crate_std", "bytemuck_derive"] }
 xxhash-rust = { version = "0.8.6", features = ["const_xxh32"] }
 capnp = "^0.17"
-raiithread = { git = "https://github.com/SignalWalker/raiithread" }
 socket2 = { version = "^0.5" }
 mio = "^0.8"
 thiserror = "^1.0"
@@ -20,6 +19,7 @@ lazy_static = "^1.4"
 dashmap = "^5.4"
 parking_lot = "^0.12"
 tracing = "^0.1"
+futures = "^0.3"
 
 ggrs = { git = "https://github.com/gschup/ggrs", features=[ "sync-send" ], optional = true }
 bincode = { version = "^1.3", optional = true}
