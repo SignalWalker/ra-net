@@ -1,0 +1,11 @@
+[package]
+name = "chat"
+version = "0.1.0"
+edition = "2021"
+
+publish = false
+
+[dependencies]
+ra-net = { path = "../.." }
+
+iced = { version = "^0.9", features = ["tokio"] }
